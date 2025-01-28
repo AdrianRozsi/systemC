@@ -23,8 +23,27 @@ Soft::Soft(sc_core::sc_module_name name, char *coefs, char *samples)
   , offset(sc_core::SC_ZERO_TIME)
 {
 
+  coeffsFile.open(coefs);
+  samplesFile.open(samples);
+  output.open("result.txt");  
   //AudioFile<double> audioFile;  
   samplesFile.open(samples);
+
+
+  if(!coeffsFile.is_open() || !samplesFile.is_open() )
+    SC_REPORT_ERROR("Soft", "Cannot open file.");
+
+  if(samplesFile.is_open())
+    {
+      while(samplesFile.peek()!=EOF)
+	{
+	  getline(samplesFile, line);
+	  count++;
+	}
+    }  
+
+
+
   //audioFile.open(samples);
   std::cout<<"arg1: "<<coefs<<std::endl;
   std::cout<<"arg2: "<<samples<<std::endl;
@@ -106,7 +125,7 @@ int resize(int samples)
 Soft::~Soft()
 {
  
-  //coeffsFile.close(); -Nem kell
+  coeffsFile.close(); 
   samplesFile.close();
  
   SC_REPORT_INFO("Soft", "Destroyed.");
@@ -453,7 +472,7 @@ vector<vector<int>> gauss_amp
 	{4, 3, 2, 0, 0, 0, 0, 2, 3, 4}
   };
 
-  vector<double> generate_gaussian(vector<double> freq, uint8_t preset)
+  vector<double> Soft::generate_gaussian(vector<double> freq, uint8_t preset)
 {
 	vector<double> gauss(freq.size());
 	for (int i = 0; i < freq.size(); i++)
@@ -470,6 +489,8 @@ vector<vector<int>> gauss_amp
 	return gauss;
 }
 
+
+
 /*
 Peak normalization of a fft Array.
 
@@ -479,7 +500,7 @@ param:
 
 */
 
-  vector<Complex> normalizePeak(vector<Complex> fftArr, uint8_t preset)
+  vector<Complex> Soft::normalizePeak(vector<Complex> fftArr, uint8_t preset)
 {
 	vector<Complex> out(fftArr.size());
 
@@ -502,7 +523,7 @@ param:
 
 */
 
-vector<Complex> normalizePower(vector<Complex> modifiedFftArr, vector<Complex> fftArr)
+vector<Complex> Soft::normalizePower(vector<Complex> modifiedFftArr, vector<Complex> fftArr)
 {
 	double power1 = 0;
 	double power2 = 0;
@@ -533,4 +554,4 @@ vector<Complex> normalizePower(vector<Complex> modifiedFftArr, vector<Complex> f
 }
 
 
- 
+
