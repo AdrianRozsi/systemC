@@ -1,6 +1,8 @@
 
 #include "interconnect.hpp"
 
+
+
 Interconnect::Interconnect(sc_core::sc_module_name name)
   : sc_module(name)
   , offset(sc_core::SC_ZERO_TIME)
@@ -17,28 +19,27 @@ Interconnect::~Interconnect()
 void Interconnect::b_transport(pl_t &pl, sc_core::sc_time &offset)
 {
   sc_dt::uint64 addr = pl.get_address();
-  sc_dt::uint64 taddr = addr & 0x00FFFFFF;
-  // std::cout << "addr = " << addr << std::endl;
 
-	if(addr >= VP_ADDR_BRAM_L && addr <= VP_ADDR_BRAM_H)
-    {
-      // std::cout << "sending to bram" << std::endl;
-      pl.set_address(taddr);
+  // DEBUG
+ // std::cout << "[INTERCONNECT] IN addr = 0x" << std::hex << addr << std::dec << std::endl;
+
+  if (addr >= VP_ADDR_BRAM_L && addr <= VP_ADDR_BRAM_H)
+  {
+      // A BRAM vezérlő majd eldönti, hogy samples/coeffs/results melyik
       bram_socket->b_transport(pl, offset);
-      pl.set_address(addr);
-    }
-	else if(addr >= VP_ADDR_HARD_L && addr <= VP_ADDR_HARD_H)
-    {
-       std::cout << "sending to hard" << std::endl;
-       pl.set_address(taddr);
-       hard_socket->b_transport(pl, offset);
-       pl.set_address(addr);
-    }
-	else
-    {
+  }
+  else if (addr >= VP_ADDR_HARD_L && addr <= VP_ADDR_HARD_H)
+  {
+      //std::cout << "[INTERCONNECT] forwarding to HARD, addr = 0x" << std::hex << addr << std::dec << std::endl;
+      hard_socket->b_transport(pl, offset);
+  }
+  else
+  {
       SC_REPORT_ERROR("Interconnect", "Wrong address.");
-      pl.set_response_status ( tlm::TLM_ADDRESS_ERROR_RESPONSE );
-    }
+      pl.set_response_status(tlm::TLM_ADDRESS_ERROR_RESPONSE);
+      return;
+  }
 
   offset += sc_core::sc_time(10, sc_core::SC_NS);
 }
+

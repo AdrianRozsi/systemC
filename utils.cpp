@@ -1,55 +1,18 @@
-#include "utils.hpp"
+#include "typedefs.hpp"
+#include <cstring>
+#include <iostream>
 
-num_t to_fixed (unsigned char *buf){
-    string s ="";
-    num_t mult = 1; //sign
 
-    for (int i = 0; i < BUFF_SIZE; ++i){
-        s += bitset<CHAR_LEN>((int)buf[i]).to_string();//from unsigned char into binary
-    }
-
-   if (s[0] == '1') {
-  std::bitset<TOTAL_SIZE> temp_bitset(s);  // s bináris
-    int temp_int = static_cast<int>(temp_bitset.to_ulong());  // Bitset -> int konverzió
-
-    temp_int = ~temp_int + 1;  
-
-    // Visszaalakítás bitset-re
-    temp_bitset = std::bitset<TOTAL_SIZE>(temp_int);  // Az int-et bitset-té alakítjuk vissza
-
-    
-    s = temp_bitset.to_string();  // Visszakonvertáljuk stringgé
-
-    mult = -1;  // A szám negatív
+void to_uchar(unsigned char* buf, num_t value) {
+    std::memcpy(buf, &value, sizeof(num_t));
 }
 
-
-    string w, f;//whole and fraction parts
-    for(int i = 0; i < WHOLE_SIZE; i++){
-        w += s[i];//whole part
-    }
-    for(int i = WHOLE_SIZE; i < TOTAL_SIZE; i++){
-        f += s[i];//fraction part
-    }
-
-    int w_i = stoi(w, 0, 2);//turn from string into int
-    double f_i = (double)stoi(f, 0, 2);//turn from string into double
-
-    return (num_t) ( mult*(w_i + f_i / (1 << FRAC_SIZE)));//set put it back together and set sign
+num_t to_fixed(const unsigned char* buf) {
+    num_t val;
+    std::memcpy(&val, buf, sizeof(num_t));
+    return val;
 }
 
-void to_uchar(unsigned char *buf, num_t d){
-    string s = d.to_bin();//from num_t into binary
-
-    s.erase(0,2);//erase 0b
-    s.erase(I, 1);//erase .
-
-    char single_char[CHAR_LEN];
-    for (int i = 0; i < BUFF_SIZE; i++){
-        s.copy(single_char, CHAR_LEN, i*CHAR_LEN);//copy first BUFF_SIZE bits
-        buf[i] = (unsigned char) stoi(single_char, 0, 2);//change to unsigned char
-    }
-}
 
 /*
 double to_double(unsigned char *buf)
@@ -62,5 +25,30 @@ double to_double(unsigned char *buf)
   
   double multiplier = 1;
   
+}
+*/
+/*#include "utils.hpp"
+#include <cstring>
+#include <cstdint>
+
+/**
+ * Konverzió unsigned char -> num_t (fixpontos), 32 bites bufferből.
+ * Stabil, egyszerű verzió.
+ */
+/*num_t to_fixed (unsigned char *buf)
+{
+    int32_t raw;
+    std::memcpy(&raw, buf, sizeof(raw));
+    return num_t(raw) / (1 << 16);
+}
+
+/**
+ * Konverzió num_t -> unsigned char [4 byte] bufferbe.
+ * Stabil, egyszerű verzió.
+ */
+/*void to_uchar(unsigned char *buf, num_t d)
+{
+    int32_t raw = static_cast<int32_t>(std::round(d.to_double() * (1 << 16)));
+    std::memcpy(buf, &raw, sizeof(raw));
 }
 */

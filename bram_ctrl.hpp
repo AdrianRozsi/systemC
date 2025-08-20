@@ -16,6 +16,8 @@ public:
   tlm_utils::simple_initiator_socket<BramCtrl> bram_samples_socket;
   tlm_utils::simple_initiator_socket<BramCtrl> bram_coeffs_socket;
   tlm_utils::simple_initiator_socket<BramCtrl> bram_result_socket;
+  tlm_utils::simple_initiator_socket<BramCtrl> soft_initiator_socket;
+  tlm_utils::simple_target_socket<BramCtrl> hard_socket;  // ÚJ: kell a Hard-nak
 
 protected:
   void b_transport (pl_t &, sc_core::sc_time &);

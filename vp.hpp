@@ -14,7 +14,7 @@
 class Vp :  public sc_core::sc_module
 {
 public:
-  Vp(sc_core::sc_module_name name,char *coefs, char *samples);
+  Vp(sc_core::sc_module_name name,char *coefs, char *samples, uint8_t preset);
   ~Vp();
 
 protected:

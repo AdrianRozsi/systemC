@@ -1,25 +1,40 @@
 #include <systemc>
+#include "AudioFile.h"
 #include "vp.hpp"
-extern int thr;
 #include <chrono>
+
 using namespace sc_core;
 using namespace tlm;
-
-sc_core::sc_time offset, delay;
-int counter;
+using namespace std;
+using namespace std::chrono;
 
 int sc_main(int argc, char* argv[])
 {
-  counter = 0;
-  if(argc!=3){
-  	std::cout<<"Start with: "<<std::endl;
-  	std::cout << "./filename 'wavFileNam' 'presets' " << std::endl;
-    std::cout << "presets can be: bass, mid, trebble" << std::endl;
-    std::cout << "example: ./program someFile.wav bass" << std::endl;
+    if (argc < 3) {
+        cout << "Usage: ./program <input.wav> <bass|mid|treble>\n";
+        return 1;
+    }
+
+    const string wavFile = argv[1];
+    const string presetStr = argv[2];
+    uint8_t preset;
+
+    if      (presetStr == "bass")   preset = BASS;
+    else if (presetStr == "mid")    preset = MID;
+    else if (presetStr == "treble") preset = TREBLE;
+    else {
+        cout << "Preset must be bass | mid | treble\n";
+        return 1;
+    }
+
+    AudioFile<double> probe;
+    
+    if (!probe.load(wavFile)) {
+        cerr << "[main] ERROR: cannot open input WAV file: " << wavFile << "\n";
+        return 1;
+    }
+
+    Vp vp("VP", const_cast<char*>(wavFile.c_str()), const_cast<char*>(wavFile.c_str()), preset);
+    sc_start();
     return 0;
-  }
-  Vp vp("VP",argv[1],argv[2]);
-  sc_start(10, sc_core::SC_MS);
-  //std::printf("Throughput is: %d\n", thr*100);
-  return 0;
 }

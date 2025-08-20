@@ -1,68 +1,41 @@
+#define _CRT_SECURE_NO_DEPRECATE 
 #include "hard.hpp"
+#include <systemc.h>
 #include <vector>
 #include <complex>
 #include <cmath>
 #include <iostream>
-
+#include <cstring>
+#include "utils.hpp"
+#include <fstream>
 
 using Complex = std::complex<double>;
-extern int thr;
 
-Hard::Hard(sc_core::sc_module_name name)
-  : sc_module(name)
-  , start(0)
-  , done(0)
-  , offset(sc_core::SC_ZERO_TIME)
+int offset_index = 0;
+
+Hard::Hard(sc_core::sc_module_name name, Bram &bram_ref)
+    : sc_core::sc_module(name),
+      bram(bram_ref),
+      bram_samples_socket("bram_samples_socket"),
+      bram_coeffs_socket("bram_coeffs_socket"),
+      bram_result_socket("bram_result_socket"),
+      start(false),
+      done(false),
+      offset(sc_core::SC_ZERO_TIME)
 {
-  soft_socket.register_b_transport(this, &Hard::b_transport); 
- 
-  SC_REPORT_INFO("Hard", "Constructed.");
+    soft_socket.register_b_transport(this, &Hard::b_transport);
+    SC_REPORT_INFO("Hard", "Constructed.");
 }
 
 Hard::~Hard()
 {
-  SC_REPORT_INFO("Hard", "Destroyed.");
+    SC_REPORT_INFO("Hard", "Destroyed.");
 }
 
-void Hard::FFT_Function()
+// FFT algoritmus
+std::vector<Complex> Hard::fft(const std::vector<std::complex<double>>& in)
 {
- num_t temp;
-    std::vector<std::complex<double>> complex_coeffs(COEFFS_SIZE); // Complex array for FFT
-
-    std::cout << "\nStarting Hard...\n" << std::endl;
-
-    // Read coefficients from BRAM and store in the real part of the complex array
-    for (int i = 0; i < COEFFS_SIZE; i++) {
-        temp = read_bram(i, 1); // Read from BRAM
-        std::cout << "coefsH[" << i << "] = " << temp << std::endl;
-        coeffsH[i] = temp;
-        complex_coeffs[i] = std::complex<double>(temp, 0.0); // Initialize imaginary part to 0
-    }
-
-    std::cout << "\nStarting FFT..." << std::endl;
-
-    // Perform FFT
-    std::vector<std::complex<double>> fft_result = FFT(complex_coeffs);
-
-    // Display the FFT results and write them back to BRAM
-    //std::cout << "Write FFT results to BRAM..." << std::endl;
-
-    // Imamo problem u vracanju negativnih brojeva, koristimo test vector dok ne resimo problem
-    std::vector<num_t> test(COEFFS_SIZE, 0);
-    test = {-2, 3, -4, -5, 6, 7, 8, 9, 10, 11, -12, 13, 14, 15, 16, -17};
-
-    for (int i = 0; i < COEFFS_SIZE; i++) {
-        result[i] = static_cast<num_t>(fft_result[i].real());
-        std::cout << "Result[" << i << "] = " << test[i] << std::endl; //treba result[i]
-        write_bram(i,test[i], 2);   //treba result[i]
-    }
-    std::cout << "\nFFT Computation DONE! \nWriting to BRAM.." << std::endl;
-    done = true; // Set the done flag
-}
-vector<Complex> Hard::FFT(const vector<Complex>& in)
-{
-  //vector<Complex> x = in; // Copy input data
-    vector<Complex> x(in);
+     vector<Complex> x(in);
 
 	// DFT
 	unsigned int N = x.size(), k = N, n;
@@ -108,117 +81,190 @@ vector<Complex> Hard::FFT(const vector<Complex>& in)
 	return x;
 }
 
+// IFFT algoritmus
+std::vector<Complex> Hard::ifft(const std::vector<std::complex<double>>& in)
+{
+
+
+	vector<Complex> x1(in);
+	size_t size = in.size();
+	for (int i = 0; i < size; i++)
+	{
+		x1[i] = std::conj(x1[i]);
+		// cout << x1[i] << endl;
+	}
+
+	// forward fft
+	x1 = fft(x1);
+
+	// conjugate the complex numbers again
+	for (int i = 0; i < size; i++)
+    
+		x1[i] = std::conj(x1[i]);
+    
+	for (int i = 0; i < size; i++)
+		x1[i] /= size;
+    
+	return x1;
+
+
+
+}
+
+// BRAM adott régiójának törlése
+void Hard::clear_bram_region(unsigned char type)
+{
+    for (int i = 0; i < COEFFS_SIZE * 2; ++i)
+    {
+        write_bram(i, 0.0, type);
+    }
+}
+
+// FIR funkció hardver oldalon, itt történik az IFFT számítás
+void Hard::firFunction()
+{
+    std::vector<Complex> fft_data(COEFFS_SIZE);
+
+    // Read data from BRAM
+    for (int i = 0; i < COEFFS_SIZE; ++i)
+    {
+        int addr = i;
+        const num_t re = read_bram(i * 2, 1);
+        const num_t im = read_bram(i * 2 + 1, 1);
+        fft_data[i] = Complex(re, im);
+    }
+
+    // Perform IFFT
+    std::vector<std::complex<double>> ifft_result = ifft(fft_data);
+
+    // Normalize the IFFT result before writing it to BRAM
+    for (int i = 0; i < ifft_result.size(); ++i) {
+        ifft_result[i] /= ifft_result.size();  // Normalize by the size of the FFT
+
+        // Print IFFT result before normalization
+      //  std::cout << "[HARD IFFT BEFORE NORMALIZATION] idx=" << i
+        //          << " real=" << ifft_result[i].real()
+          //        << " imag=" << ifft_result[i].imag() << std::endl;
+    }
+
+    // Write the normalized results to BRAM (result region)
+    for (int i = 0; i < ifft_result.size(); ++i)
+    {
+        write_bram(i * 2, ifft_result[i].real(), 2);  // Writing real part to BRAM
+        write_bram(i * 2 + 1, ifft_result[i].imag(), 2);  // Writing imaginary part to BRAM
+    }
+
+    // Mark as done to indicate completion
+    done = true;
+}
+
+
 void Hard::b_transport(pl_t &pl, sc_core::sc_time &offset)
 {
-  tlm::tlm_command cmd = pl.get_command();
-  sc_dt::uint64 addr = pl.get_address();
-  unsigned int len = pl.get_data_length();
-  unsigned char *buf = pl.get_data_ptr();
-  pl.set_response_status( tlm::TLM_OK_RESPONSE );
+    auto cmd = pl.get_command();
+    auto addr = pl.get_address();
+    unsigned int len = pl.get_data_length();
+    auto* buf = pl.get_data_ptr();
+    pl.set_response_status(tlm::TLM_OK_RESPONSE);
 
-  if(len != BUFF_SIZE)
+    if (len != BUFF_SIZE)
     {
-      pl.set_response_status(tlm::TLM_BURST_ERROR_RESPONSE);
+        pl.set_response_status(tlm::TLM_BURST_ERROR_RESPONSE);
+        return;
     }
 
-  if(cmd == tlm::TLM_WRITE_COMMAND)
-    {
-      if(addr == ADDR_CMD)
-	{
-	  // start = to_fixed(buf);
-	  start = true;
-	  done = !start;
-	  std::cout<<"Call FFT Function()"<<std::endl;
-	  FFT_Function();
-	}
-      else
-	{
-	  pl.set_response_status(tlm::TLM_ADDRESS_ERROR_RESPONSE);
-	}
-      
-    }
-  else if(cmd == tlm::TLM_READ_COMMAND)
-    {
-      if(addr == ADDR_STATUS)
-	{
-	  to_uchar(buf, done);
-	}
-      
-      else if(addr >= VP_ADDR_SAMPLES_BASE)
-	{
-	  to_uchar(buf, result[addr - VP_ADDR_SAMPLES_BASE]);
-	  }
-      else{
-	
-	pl.set_response_status(tlm::TLM_ADDRESS_ERROR_RESPONSE);
-	
-      }
+    uint64_t local_addr = addr - VP_ADDR_HARD_BASE;
 
+    if (cmd == tlm::TLM_WRITE_COMMAND)
+    {
+        if (local_addr == ADDR_CMD)
+        {
+            done = false;          // fontos: minden új trigger előtt töröljük a done jelet
+            //SC_REPORT_INFO("Hard", "Host triggered firFunction().");
+            firFunction();
+        }
+        else if (local_addr == ADDR_OFFSET)
+        {
+            
+        }
+        else
+        {
+            pl.set_response_status(tlm::TLM_ADDRESS_ERROR_RESPONSE);
+        }
     }
-  else{
-    
-    pl.set_response_status(tlm::TLM_COMMAND_ERROR_RESPONSE);
-    
-  }
-    
-   offset += sc_core::sc_time(10, sc_core::SC_NS);
+    else if (cmd == tlm::TLM_READ_COMMAND)
+    {
+        if (local_addr == ADDR_STATUS)
+        {
+            //std::cout << "[HARD] Status read, done = " << done << std::endl;
+            num_t done_val = done ? 1.0 : 0.0;
+            to_uchar(buf, done_val);
+        }
+        else
+        {
+            pl.set_response_status(tlm::TLM_ADDRESS_ERROR_RESPONSE);
+        }
+    }
+    else
+    {
+        pl.set_response_status(tlm::TLM_COMMAND_ERROR_RESPONSE);
+    }
+
+    offset += sc_core::sc_time(10, sc_core::SC_NS);
 }
-    
+
 num_t Hard::read_bram(int addr, unsigned char type)
 {
-  pl_t pl;
-  unsigned char buf[BUFF_SIZE];
-  pl.set_address(addr*BUFF_SIZE);
-  pl.set_data_length(BUFF_SIZE);
-  pl.set_data_ptr(buf);
-  pl.set_command( tlm::TLM_READ_COMMAND );
-  pl.set_response_status ( tlm::TLM_INCOMPLETE_RESPONSE );
-  sc_core::sc_time offset = sc_core::SC_ZERO_TIME;
+    pl_t pl;
+    unsigned char buf[BUFF_SIZE];
+    pl.set_data_length(BUFF_SIZE);
+    pl.set_data_ptr(buf);
+    pl.set_command(tlm::TLM_READ_COMMAND);
+    pl.set_response_status(tlm::TLM_INCOMPLETE_RESPONSE);
 
-  switch(type)
-    {
-    case 0:
-      bram_samples_socket->b_transport(pl, offset);
-      break;
-    case 1:
-      bram_coeffs_socket->b_transport(pl, offset);
-      break;
-    case 2:
-      bram_result_socket->b_transport(pl, offset);
-      break;
-    default:
-      break;
+    sc_core::sc_time loc_offset = sc_core::SC_ZERO_TIME;
+    uint64_t base = 0;
+    switch (type) {
+        case 0: base = VP_ADDR_SAMPLES_BASE; break;
+        case 1: base = VP_ADDR_COEFFS_BASE; break;
+        case 2: base = VP_ADDR_RESULT_BASE; break;
+        default:
+            SC_REPORT_ERROR("Hard::read_bram", "Invalid BRAM type");
+            break;
     }
-  wait (10.8,sc_core::SC_NS);
-  return to_fixed(buf);
+    pl.set_address(static_cast<uint64_t>(addr) * BUFF_SIZE + base);
+    interconnect_socket->b_transport(pl, loc_offset);
+    wait(sc_core::sc_time(10.8, sc_core::SC_NS));
+    num_t result = to_fixed(buf);
+/*std::cout << "[HARD DEBUG] Read from addr=0x" << std::hex
+          << base + addr * BUFF_SIZE << std::dec
+          << " => val = " << result << std::endl;*/
+return result;
 }
 
 void Hard::write_bram(int addr, num_t val, unsigned char type)
 {
-  pl_t pl;
-  unsigned char buf[BUFF_SIZE];
-  to_uchar(buf,val);
-  pl.set_address(addr*BUFF_SIZE);
-  pl.set_data_length(BUFF_SIZE);
-  pl.set_data_ptr(buf);
-  pl.set_command( tlm::TLM_WRITE_COMMAND );
-  pl.set_response_status ( tlm::TLM_INCOMPLETE_RESPONSE );
+    pl_t pl;
+    unsigned char buf[BUFF_SIZE];
+    to_uchar(buf, val);
+    pl.set_data_length(BUFF_SIZE);
+    pl.set_data_ptr(buf);
+    pl.set_command(tlm::TLM_WRITE_COMMAND);
+    pl.set_response_status(tlm::TLM_INCOMPLETE_RESPONSE);
 
-  switch(type)
-    {
-    case 0:
-      bram_samples_socket->b_transport(pl, offset);
-      break;
-    case 1:
-      bram_coeffs_socket->b_transport(pl, offset);
-      break;
-    case 2:
-      bram_result_socket->b_transport(pl, offset);
-      break;
-    default:
-      break;
-      
+    sc_core::sc_time loc_offset = sc_core::SC_ZERO_TIME;
+    uint64_t base = 0;
+    switch (type) {
+        case 0: base = VP_ADDR_SAMPLES_BASE; break;
+        case 1: base = VP_ADDR_COEFFS_BASE; break;
+        case 2: base = VP_ADDR_RESULT_BASE; break;
+        default:
+            SC_REPORT_ERROR("Hard::write_bram", "Invalid BRAM type");
+            break;
     }
-  wait (10.8,sc_core::SC_NS);    
-  
+    pl.set_address(static_cast<uint64_t>(addr) * BUFF_SIZE + base);
+    interconnect_socket->b_transport(pl, loc_offset);
+    //std::cout << "[HARD WRITE] Writing to addr=" << addr << " val=" << val << std::endl;
+
+    wait(sc_core::sc_time(10.8, sc_core::SC_NS));
 }
